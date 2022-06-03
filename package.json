@@ -31,22 +31,7 @@
     "require": "./index.cjs"
   },
   "types": "./types/index.d.ts",
-  "devDependencies": {
-    "@babel/eslint-parser": "^7.17.0",
-    "standard": "^16.0.4"
-  },
   "dependencies": {
     "@neumatter/is": "^1.0.2"
-  },
-  "babel": {
-    "targets": {
-      "node": "16"
-    }
-  },
-  "standard": {
-    "parser": "@babel/eslint-parser",
-    "ignore": [
-      "/types"
-    ]
   }
 }

@@ -1,5 +1,6 @@
 
 import is from '@neumatter/is'
+import * as Stream from 'stream'
 
 const MISSING_PAIR = 'codePointAt: high surrogate not followed by low surrogate.'
 const MAX_CHARS = 2000
@@ -18,7 +19,19 @@ const isLow = code => {
   return code >= 0xDC00 && code <= 0xDFFF
 }
 
-function codePointAt (str, index) {
+const codePointAt = (str, index) => {
+  index = index || 0
+  const point = str.charCodeAt(index)
+  if (isLow(point)) return null
+  if (isHigh(point)) {
+    const nextPoint = str.charCodeAt(index + 1)
+    if (is.NaN(nextPoint)) throw new Error(MISSING_PAIR)
+    return codeFromPair(point, nextPoint)
+  }
+  return point
+}
+
+const codePointAtAsync = async (str, index) => {
   index = index || 0
   const point = str.charCodeAt(index)
   if (isLow(point)) return null
@@ -211,4 +224,74 @@ export default class CodeBatch {
     }
     return decimal
   }
+
+  static async new (input) {
+    const codeBatch = new CodeBatch()
+    const output = []
+    const { length } = input
+    let index = -1
+    while (++index < length) {
+      const code = await codePointAtAsync(input, index)
+      if (code === null) continue
+      output.push(code)
+      if (index >= MAX_CHARS) break
+    }
+    codeBatch.data = await Promise.all(output)
+    return codeBatch
+  }
 }
+
+class CodeStream extends Stream.Readable {
+  #index
+  constructor (data, options) {
+    super(options)
+    this.data = data
+    this.#index = -1
+  }
+
+  _read () {
+    ++this.#index
+    const next = () => {
+      if (!this.data.length) {
+        this.emit('readable')
+        this.push(null)
+      } else {
+        const code = codePointAt(this.data, 0)
+        this.data = this.data.substring(1, this.data.length)
+        if (code) {
+          if (this.#index === 0) {
+            this.emit('readable')
+            this.emit('data', `${code}`)
+            this.push(`${code}`)
+          } else {
+            this.emit('readable')
+            this.emit('data', ` ${code}`)
+            this.push(` ${code}`)
+          }
+        } else {
+          next()
+        }
+      }
+    }
+    next()
+  }
+}
+
+async function mapChunks (readable) {
+  const output = []
+  for await (const chunk of readable) {
+    output.push(chunk.toString())
+  }
+  return Promise.all(output)
+}
+
+const test = '💻 Hello World! 🔥'
+console.time('CodeBatch.new')
+const codeBatchAsync = new CodeStream(test)
+const chunks = await mapChunks(codeBatchAsync)
+console.log(chunks)
+console.timeEnd('CodeBatch.new')
+// console.time('new-CodeBatch')
+// const codeBatchSync = new CodeBatch(test)
+// console.log(codeBatchSync.toString())
+// console.timeEnd('new-CodeBatch')
